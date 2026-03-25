@@ -1,0 +1,39 @@
+---
+- name: Patch RHEL host
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    security_only: true
+    reboot_if_needed: true
+
+  tasks:
+    - name: Apply security updates only
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+        security: true
+        update_only: true
+      when: security_only | bool
+      register: patch_result
+
+    - name: Apply all updates
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+        update_only: true
+      when: not (security_only | bool)
+      register: patch_result
+
+    - name: Check whether reboot is required
+      ansible.builtin.command: needs-restarting -r
+      register: reboot_check
+      failed_when: false
+      changed_when: false
+
+    - name: Reboot if required
+      ansible.builtin.reboot:
+        reboot_timeout: 900
+      when:
+        - reboot_if_needed | bool
+        - reboot_check.rc != 0
