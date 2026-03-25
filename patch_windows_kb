@@ -1,0 +1,59 @@
+---
+# patch_windows_kb.yml
+#
+# Usage:
+#   ansible-playbook patch_windows_kb.yml -i inventory.ini -e "target_hosts=win_servers kb_number=KB5034763"
+#
+# Or to target a single machine:
+#   ansible-playbook patch_windows_kb.yml -i inventory.ini -e "target_hosts=MYSERVER01 kb_number=KB5034763"
+
+- name: Patch Windows system with a specific KB
+  hosts: "{{ target_hosts }}"        # Passed in at runtime via -e, or set a default below
+  gather_facts: true
+
+  vars:
+    kb_number: "KB0000000"           # Default fallback — always override this via -e
+    reboot_after_patch: true         # Set to false if you want to reboot manually later
+    reboot_timeout: 3600             # Seconds to wait for the machine to come back (1 hour)
+
+  tasks:
+
+    - name: "Check if {{ kb_number }} is already installed"
+      ansible.windows.win_updates:
+        state: searched
+        accept_list:
+          - "{{ kb_number }}"
+      register: search_result
+
+    - name: Show search result
+      ansible.builtin.debug:
+        msg: "Updates found matching {{ kb_number }}: {{ search_result.found_update_count }}"
+
+    - name: "Install {{ kb_number }}"
+      ansible.windows.win_updates:
+        category_names:
+          - SecurityUpdates
+          - CriticalUpdates
+          - UpdateRollups
+          - Updates                  # Cast a wide net so the KB is found regardless of category
+        accept_list:
+          - "{{ kb_number }}"        # Only this KB will be installed
+        reboot: "{{ reboot_after_patch }}"
+        reboot_timeout: "{{ reboot_timeout }}"
+      become: true
+      become_method: runas
+      become_user: SYSTEM            # Required for some patches that need SYSTEM privileges
+      register: patch_result
+      when: search_result.found_update_count | int > 0
+
+    - name: Show patch result
+      ansible.builtin.debug:
+        msg: >
+          Installed: {{ patch_result.installed_update_count | default(0) }}
+          update(s). Reboot required: {{ patch_result.reboot_required | default(false) }}
+      when: patch_result is defined and patch_result is not skipped
+
+    - name: Warn if KB was not found
+      ansible.builtin.debug:
+        msg: "WARNING: {{ kb_number }} was not found on {{ inventory_hostname }}. It may already be installed or not applicable."
+      when: search_result.found_update_count | int == 0
