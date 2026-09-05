@@ -4,6 +4,7 @@
   become: true
   gather_facts: true
   vars:
+    rhsa: ""                 # optional advisory, e.g. RHSA-2026:0001; empty = all security updates
     security_only: true
     reboot_if_needed: true
 
@@ -13,13 +14,24 @@
         name: dnf-utils
         state: present
 
+    # On-demand: apply only the packages in a specific advisory (RHSA/RHBA/RHEA).
+    - name: "Apply a specific advisory ({{ rhsa }})"
+      ansible.builtin.command:
+        cmd: "dnf -y update --advisory={{ rhsa }}"
+      register: advisory_result
+      when: rhsa | length > 0
+      changed_when: "'Nothing to do' not in advisory_result.stdout"
+      failed_when: advisory_result.rc != 0
+
     - name: Apply security updates only
       ansible.builtin.dnf:
         name: "*"
         state: latest
         security: true
         update_only: true
-      when: security_only | bool
+      when:
+        - rhsa | length == 0
+        - security_only | bool
       register: patch_result
 
     - name: Apply all updates
@@ -27,7 +39,9 @@
         name: "*"
         state: latest
         update_only: true
-      when: not (security_only | bool)
+      when:
+        - rhsa | length == 0
+        - not (security_only | bool)
       register: patch_result
 
     - name: Check whether reboot is required
