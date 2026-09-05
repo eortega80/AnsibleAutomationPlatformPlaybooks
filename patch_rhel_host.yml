@@ -8,6 +8,11 @@
     reboot_if_needed: true
 
   tasks:
+    - name: Ensure needs-restarting is available (provided by dnf-utils)
+      ansible.builtin.dnf:
+        name: dnf-utils
+        state: present
+
     - name: Apply security updates only
       ansible.builtin.dnf:
         name: "*"
@@ -31,9 +36,11 @@
       failed_when: false
       changed_when: false
 
+    # needs-restarting -r exit codes: 0 = no reboot needed, 1 = reboot needed.
+    # Any other code (e.g. 127 command not found) is treated as "do not reboot".
     - name: Reboot if required
       ansible.builtin.reboot:
         reboot_timeout: 900
       when:
         - reboot_if_needed | bool
-        - reboot_check.rc != 0
+        - reboot_check.rc == 1
